@@ -18,7 +18,6 @@ export interface MechanicProfile {
   address: string | null;
   phone: string | null;
   specialties: string[];
-  hourly_rate: number | null;
   is_available: boolean;
   rating: number;
   total_reviews: number;

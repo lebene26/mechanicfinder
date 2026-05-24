@@ -38,7 +38,6 @@ export function MechanicProfileForm({
     location: existingProfile?.location || "",
     address: existingProfile?.address || "",
     phone: existingProfile?.phone || "",
-    hourlyRate: existingProfile?.hourly_rate?.toString() || "",
     yearsExperience: existingProfile?.years_experience?.toString() || "",
     specialties: existingProfile?.specialties || [],
     isAvailable: existingProfile?.is_available ?? true,
@@ -78,7 +77,6 @@ export function MechanicProfileForm({
         location: formData.location,
         address: formData.address || null,
         phone: formData.phone || null,
-        hourly_rate: formData.hourlyRate ? parseFloat(formData.hourlyRate) : null,
         years_experience: formData.yearsExperience
           ? parseInt(formData.yearsExperience)
           : 0,
@@ -236,23 +234,6 @@ export function MechanicProfileForm({
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="hourlyRate">Hourly Rate (GH₵)</Label>
-            <Input
-              id="hourlyRate"
-              type="number"
-              min="0"
-              step="0.01"
-              placeholder="e.g., 50"
-              value={formData.hourlyRate}
-              onChange={(e) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  hourlyRate: e.target.value,
-                }))
-              }
-            />
-          </div>
         </CardContent>
       </Card>
 

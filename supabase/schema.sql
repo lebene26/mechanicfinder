@@ -26,7 +26,6 @@ create table if not exists public.mechanic_profiles (
   address text,
   phone text,
   specialties text[] not null default '{}',
-  hourly_rate numeric(10, 2),
   is_available boolean not null default true,
   rating numeric(3, 2) not null default 0,
   total_reviews integer not null default 0,

@@ -298,16 +298,9 @@ export function MechanicSearch({ mechanics, userId }: MechanicSearchProps) {
                 )}
               </div>
 
-              {/* Price & Experience */}
-              <div className="mt-4 flex items-center justify-between text-sm">
-                {mechanic.hourly_rate && (
-                  <span className="font-medium text-foreground">
-                    GH{"\u20B5"} {mechanic.hourly_rate}/hr
-                  </span>
-                )}
-                <span className="text-muted-foreground">
-                  {mechanic.years_experience} yrs exp
-                </span>
+              {/* Experience */}
+              <div className="mt-4 text-sm text-muted-foreground">
+                {mechanic.years_experience} yrs exp
               </div>
 
               {/* Actions */}
