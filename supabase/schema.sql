@@ -11,10 +11,14 @@ create table if not exists public.profiles (
   full_name text,
   phone text,
   avatar_url text,
-  role text not null default 'client' check (role in ('client', 'mechanic')),
+  role text not null default 'client' check (role in ('client', 'mechanic', 'admin')),
+  status text not null default 'active' check (status in ('active', 'suspended')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+create index if not exists profiles_role_idx on public.profiles (role);
+create index if not exists profiles_status_idx on public.profiles (status);
 
 -- Mechanic workshop profiles
 create table if not exists public.mechanic_profiles (
@@ -50,6 +54,7 @@ create table if not exists public.service_requests (
   location text,
   latitude double precision,
   longitude double precision,
+  image_url text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -185,6 +190,50 @@ create policy "profiles_insert_own"
   to authenticated
   with check (auth.uid() = id);
 
+-- Admin helper + policies (used by the /admin dashboard)
+create or replace function public.is_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.profiles
+    where id = auth.uid()
+      and role = 'admin'
+  );
+$$;
+
+grant execute on function public.is_admin() to authenticated;
+
+drop policy if exists "profiles_update_admin" on public.profiles;
+create policy "profiles_update_admin"
+  on public.profiles for update
+  to authenticated
+  using (public.is_admin())
+  with check (public.is_admin());
+
+drop policy if exists "profiles_delete_admin" on public.profiles;
+create policy "profiles_delete_admin"
+  on public.profiles for delete
+  to authenticated
+  using (public.is_admin());
+
+drop policy if exists "mechanic_profiles_update_admin" on public.mechanic_profiles;
+create policy "mechanic_profiles_update_admin"
+  on public.mechanic_profiles for update
+  to authenticated
+  using (public.is_admin())
+  with check (public.is_admin());
+
+drop policy if exists "mechanic_profiles_delete_admin" on public.mechanic_profiles;
+create policy "mechanic_profiles_delete_admin"
+  on public.mechanic_profiles for delete
+  to authenticated
+  using (public.is_admin());
+
 -- Mechanic profiles policies
 drop policy if exists "mechanic_profiles_select_authenticated" on public.mechanic_profiles;
 create policy "mechanic_profiles_select_authenticated"
@@ -277,14 +326,17 @@ create policy "reviews_insert_client"
   to authenticated
   with check (client_id = auth.uid());
 
--- Chat media storage (voice notes — 50 MB per file)
+-- Chat media storage (voice notes + request photos — 50 MB per file)
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
   'chat-media',
   'chat-media',
   true,
   52428800,
-  array['audio/webm', 'audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg', 'audio/ogg;codecs=opus', 'audio/mpeg']
+  array[
+    'audio/webm', 'audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg', 'audio/ogg;codecs=opus', 'audio/mpeg',
+    'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'
+  ]
 )
 on conflict (id) do update
 set public = excluded.public,

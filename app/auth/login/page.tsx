@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Wrench, Eye, EyeOff, Loader2 } from "lucide-react";
@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
 import {
   getDashboardHome,
+  isAdminOnlyPath,
   isClientOnlyPath,
   isMechanicOnlyPath,
   resolveUserRole,
@@ -20,6 +21,7 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTo = searchParams.get("redirectTo") || "/dashboard";
+  const suspended = searchParams.get("suspended");
 
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -27,6 +29,14 @@ function LoginForm() {
     email: "",
     password: "",
   });
+
+  useEffect(() => {
+    if (suspended === "1") {
+      toast.error(
+        "Your account has been suspended. Please contact an administrator."
+      );
+    }
+  }, [suspended]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,17 +60,37 @@ function LoginForm() {
       if (user) {
         const { data: profile } = await supabase
           .from("profiles")
-          .select("role")
+          .select("role, status")
           .eq("id", user.id)
           .single();
+
+        if (profile?.status === "suspended") {
+          await supabase.auth.signOut();
+          toast.error(
+            "Your account has been suspended. Please contact an administrator."
+          );
+          return;
+        }
 
         const role = resolveUserRole(profile?.role, user.user_metadata?.role);
 
         if (role) {
+          const onDefault = destination === "/dashboard";
+          const mismatchedClientPath =
+            role !== "client" && isClientOnlyPath(destination);
+          const mismatchedMechanicPath =
+            role !== "mechanic" && isMechanicOnlyPath(destination);
+          const mismatchedAdminPath =
+            role !== "admin" && isAdminOnlyPath(destination);
+          const adminOnNonAdmin =
+            role === "admin" && !isAdminOnlyPath(destination);
+
           if (
-            destination === "/dashboard" ||
-            (role === "mechanic" && isClientOnlyPath(destination)) ||
-            (role === "client" && isMechanicOnlyPath(destination))
+            onDefault ||
+            mismatchedClientPath ||
+            mismatchedMechanicPath ||
+            mismatchedAdminPath ||
+            adminOnNonAdmin
           ) {
             destination = getDashboardHome(role);
           }

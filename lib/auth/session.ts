@@ -54,9 +54,14 @@ export async function requireAuthWithRole() {
     redirect("/dashboard");
   }
 
+  // Admins do not belong on the client/mechanic dashboard pages.
+  if (session.role === "admin") {
+    redirect("/admin");
+  }
+
   return {
     ...session,
-    role: session.role,
+    role: session.role as Exclude<UserRole, "admin">,
   };
 }
 
@@ -70,5 +75,18 @@ export async function requireRole(expectedRole: UserRole) {
   return {
     ...session,
     role: (session.role ?? expectedRole) as UserRole,
+  };
+}
+
+export async function requireAdmin() {
+  const session = await requireAuth();
+
+  if (session.role !== "admin") {
+    redirect(session.role ? getDashboardHome(session.role) : "/dashboard");
+  }
+
+  return {
+    ...session,
+    role: "admin" as const,
   };
 }

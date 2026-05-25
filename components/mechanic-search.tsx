@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import Image from "next/image";
 import {
   Search,
   MapPin,
@@ -12,6 +13,10 @@ import {
   ChevronDown,
   Loader2,
   CheckCircle,
+  Camera,
+  ImagePlus,
+  LocateFixed,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,6 +39,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
+import {
+  ACCEPTED_IMAGE_MIME_TYPES,
+  MAX_REQUEST_IMAGE_BYTES,
+  uploadRequestImage,
+} from "@/lib/supabase/chat-media";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import type { MechanicProfile } from "@/lib/types";
@@ -55,11 +65,110 @@ export function MechanicSearch({ mechanics, userId }: MechanicSearchProps) {
     useState<MechanicProfile | null>(null);
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [requestForm, setRequestForm] = useState({
+  const [requestForm, setRequestForm] = useState<{
+    serviceType: string;
+    description: string;
+    location: string;
+    latitude: number | null;
+    longitude: number | null;
+  }>({
     serviceType: "",
     description: "",
     location: "",
+    latitude: null,
+    longitude: null,
   });
+  const [isLocating, setIsLocating] = useState(false);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+
+  const resetRequestForm = () => {
+    setRequestForm({
+      serviceType: "",
+      description: "",
+      location: "",
+      latitude: null,
+      longitude: null,
+    });
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImageFile(null);
+    setImagePreview(null);
+  };
+
+  const handleImagePicked = (file: File | null | undefined) => {
+    if (!file) return;
+    if (!ACCEPTED_IMAGE_MIME_TYPES.includes(file.type as typeof ACCEPTED_IMAGE_MIME_TYPES[number])) {
+      toast.error("Please choose a JPG, PNG, WEBP or HEIC image.");
+      return;
+    }
+    if (file.size > MAX_REQUEST_IMAGE_BYTES) {
+      toast.error("Image is too large (max 10 MB).");
+      return;
+    }
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+  };
+
+  const removeImage = () => {
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImageFile(null);
+    setImagePreview(null);
+    if (cameraInputRef.current) cameraInputRef.current.value = "";
+    if (galleryInputRef.current) galleryInputRef.current.value = "";
+  };
+
+  const reverseGeocode = async (lat: number, lng: number): Promise<string | null> => {
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
+        { headers: { Accept: "application/json" } }
+      );
+      if (!res.ok) return null;
+      const data = (await res.json()) as { display_name?: string };
+      return data.display_name ?? null;
+    } catch {
+      return null;
+    }
+  };
+
+  const handleUseMyLocation = () => {
+    if (typeof window === "undefined" || !("geolocation" in navigator)) {
+      toast.error("Geolocation isn't supported on this device.");
+      return;
+    }
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const { latitude, longitude } = pos.coords;
+        const address = await reverseGeocode(latitude, longitude);
+        setRequestForm((prev) => ({
+          ...prev,
+          latitude,
+          longitude,
+          location:
+            address ?? `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`,
+        }));
+        toast.success("Location captured");
+        setIsLocating(false);
+      },
+      (err) => {
+        setIsLocating(false);
+        if (err.code === err.PERMISSION_DENIED) {
+          toast.error("Location permission denied. Enable it in your browser settings.");
+        } else if (err.code === err.POSITION_UNAVAILABLE) {
+          toast.error("Couldn't determine your location. Try again outdoors.");
+        } else if (err.code === err.TIMEOUT) {
+          toast.error("Location request timed out. Please try again.");
+        } else {
+          toast.error("Failed to get your location.");
+        }
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
+    );
+  };
 
   // Filter mechanics
   const filteredMechanics = mechanics.filter((mechanic) => {
@@ -83,6 +192,7 @@ export function MechanicSearch({ mechanics, userId }: MechanicSearchProps) {
 
   const handleRequestService = (mechanic: MechanicProfile) => {
     setSelectedMechanic(mechanic);
+    resetRequestForm();
     setIsRequestModalOpen(true);
   };
 
@@ -91,10 +201,26 @@ export function MechanicSearch({ mechanics, userId }: MechanicSearchProps) {
       toast.error("Please select a service type");
       return;
     }
+    if (!requestForm.location.trim() && requestForm.latitude == null) {
+      toast.error("Please share your location");
+      return;
+    }
 
     setIsSubmitting(true);
     try {
       const supabase = createClient();
+
+      let uploadedImageUrl: string | null = null;
+      if (imageFile) {
+        try {
+          uploadedImageUrl = await uploadRequestImage(supabase, userId, imageFile);
+        } catch (uploadError) {
+          console.error("Image upload failed:", uploadError);
+          toast.error("Failed to upload image. Please try a smaller photo.");
+          setIsSubmitting(false);
+          return;
+        }
+      }
 
       const { data, error } = await supabase
         .from("service_requests")
@@ -104,6 +230,9 @@ export function MechanicSearch({ mechanics, userId }: MechanicSearchProps) {
           service_type: requestForm.serviceType,
           description: requestForm.description,
           location: requestForm.location,
+          latitude: requestForm.latitude,
+          longitude: requestForm.longitude,
+          image_url: uploadedImageUrl,
           status: "pending",
         })
         .select()
@@ -113,9 +242,8 @@ export function MechanicSearch({ mechanics, userId }: MechanicSearchProps) {
 
       toast.success("Request sent successfully!");
       setIsRequestModalOpen(false);
-      setRequestForm({ serviceType: "", description: "", location: "" });
+      resetRequestForm();
 
-      // Navigate to chat
       router.push(`/chat/${data.id}`);
     } catch (error) {
       console.error("Error creating request:", error);
@@ -360,23 +488,39 @@ export function MechanicSearch({ mechanics, userId }: MechanicSearchProps) {
 
             <div className="space-y-2">
               <Label>Your Location</Label>
-              <Select
-                value={requestForm.location}
-                onValueChange={(value) =>
-                  setRequestForm((prev) => ({ ...prev, location: value }))
-                }
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full justify-start"
+                onClick={handleUseMyLocation}
+                disabled={isLocating}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select your location" />
-                </SelectTrigger>
-                <SelectContent>
-                  {LOCATIONS.map((location) => (
-                    <SelectItem key={location} value={location}>
-                      {location}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                {isLocating ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <LocateFixed className="mr-2 h-4 w-4" />
+                )}
+                {requestForm.latitude != null
+                  ? "Update my location"
+                  : "Use my current location"}
+              </Button>
+              <Input
+                placeholder="Address or landmark (e.g. near Shell, East Legon)"
+                value={requestForm.location}
+                onChange={(e) =>
+                  setRequestForm((prev) => ({
+                    ...prev,
+                    location: e.target.value,
+                  }))
+                }
+              />
+              {requestForm.latitude != null && requestForm.longitude != null && (
+                <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <MapPin className="h-3 w-3" />
+                  GPS locked: {requestForm.latitude.toFixed(5)},{" "}
+                  {requestForm.longitude.toFixed(5)}
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -392,6 +536,68 @@ export function MechanicSearch({ mechanics, userId }: MechanicSearchProps) {
                 }
                 rows={4}
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Add a Photo (optional)</Label>
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => handleImagePicked(e.target.files?.[0])}
+              />
+              <input
+                ref={galleryInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => handleImagePicked(e.target.files?.[0])}
+              />
+
+              {imagePreview ? (
+                <div className="relative overflow-hidden rounded-lg border border-border">
+                  <Image
+                    src={imagePreview}
+                    alt="Selected problem photo"
+                    width={640}
+                    height={360}
+                    unoptimized
+                    className="h-48 w-full object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={removeImage}
+                    className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-md bg-background/90 px-2 py-1 text-xs font-medium text-foreground shadow-sm hover:bg-background"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    Remove
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => cameraInputRef.current?.click()}
+                  >
+                    <Camera className="mr-2 h-4 w-4" />
+                    Snap Photo
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => galleryInputRef.current?.click()}
+                  >
+                    <ImagePlus className="mr-2 h-4 w-4" />
+                    Upload
+                  </Button>
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Show the mechanic what's wrong — max 10 MB.
+              </p>
             </div>
           </div>
 

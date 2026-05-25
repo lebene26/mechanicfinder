@@ -4,7 +4,8 @@ export interface Profile {
   full_name: string | null;
   phone: string | null;
   avatar_url: string | null;
-  role: "client" | "mechanic";
+  role: "client" | "mechanic" | "admin";
+  status: "active" | "suspended";
   created_at: string;
   updated_at: string;
 }
@@ -40,6 +41,7 @@ export interface ServiceRequest {
   location: string | null;
   latitude: number | null;
   longitude: number | null;
+  image_url: string | null;
   created_at: string;
   updated_at: string;
   mechanic_profiles?: MechanicProfile;
