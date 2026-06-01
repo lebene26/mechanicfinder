@@ -1,11 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { Clock, CheckCircle, XCircle, MessageCircle, Wrench } from "lucide-react";
+import {
+  Clock,
+  CheckCircle,
+  XCircle,
+  MessageCircle,
+  Wrench,
+  Star,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatDistanceToNow } from "date-fns";
+import {
+  getClientDisplayStatus,
+  getStatusLabel,
+  getStatusBadgeClass,
+} from "@/lib/request-status";
 import type { ServiceRequest, MechanicProfile, Profile } from "@/lib/types";
 
 interface RequestsListProps {
@@ -14,11 +26,19 @@ interface RequestsListProps {
     profiles?: Profile;
   })[];
   isClient: boolean;
+  reviewedRequestIds?: string[];
 }
 
-export function RequestsList({ requests, isClient }: RequestsListProps) {
-  const getStatusIcon = (status: string) => {
-    switch (status) {
+export function RequestsList({
+  requests,
+  isClient,
+  reviewedRequestIds = [],
+}: RequestsListProps) {
+  const reviewedSet = new Set(reviewedRequestIds);
+  const getStatusIcon = (status: ServiceRequest["status"]) => {
+    const display = isClient ? getClientDisplayStatus(status) : status;
+
+    switch (display) {
       case "pending":
         return <Clock className="h-4 w-4 text-warning" />;
       case "accepted":
@@ -33,45 +53,14 @@ export function RequestsList({ requests, isClient }: RequestsListProps) {
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "pending":
-        return (
-          <Badge variant="secondary" className="bg-warning/10 text-warning">
-            Pending
-          </Badge>
-        );
-      case "accepted":
-        return (
-          <Badge variant="secondary" className="bg-primary/10 text-primary">
-            Accepted
-          </Badge>
-        );
-      case "in_progress":
-        return (
-          <Badge variant="secondary" className="bg-primary/10 text-primary">
-            In Progress
-          </Badge>
-        );
-      case "completed":
-        return (
-          <Badge variant="secondary" className="bg-success/10 text-success">
-            Completed
-          </Badge>
-        );
-      case "cancelled":
-        return (
-          <Badge
-            variant="secondary"
-            className="bg-destructive/10 text-destructive"
-          >
-            Cancelled
-          </Badge>
-        );
-      default:
-        return null;
-    }
-  };
+  const getStatusBadge = (status: ServiceRequest["status"]) => (
+    <Badge
+      variant="secondary"
+      className={getStatusBadgeClass(status, isClient)}
+    >
+      {getStatusLabel(status, isClient)}
+    </Badge>
+  );
 
   if (requests.length === 0) {
     return (
@@ -144,8 +133,38 @@ export function RequestsList({ requests, isClient }: RequestsListProps) {
                       </Button>
                     </Link>
                   )}
-                {(request.status === "completed" ||
-                  request.status === "cancelled") && (
+                {request.status === "completed" && isClient && (
+                  <>
+                    {!reviewedSet.has(request.id) && (
+                      <Link
+                        href={`/chat/${request.id}`}
+                        className="flex-1 sm:flex-none"
+                      >
+                        <Button className="w-full" size="sm">
+                          <Star className="mr-2 h-4 w-4" />
+                          Rate This Service
+                        </Button>
+                      </Link>
+                    )}
+                    <Link
+                      href={`/chat/${request.id}`}
+                      className="flex-1 sm:flex-none"
+                    >
+                      <Button
+                        variant={
+                          reviewedSet.has(request.id) ? "outline" : "secondary"
+                        }
+                        className="w-full"
+                        size="sm"
+                      >
+                        {reviewedSet.has(request.id)
+                          ? "View History"
+                          : "Open Chat"}
+                      </Button>
+                    </Link>
+                  </>
+                )}
+                {request.status === "cancelled" && (
                   <Link href={`/chat/${request.id}`} className="flex-1 sm:flex-none">
                     <Button variant="outline" className="w-full" size="sm">
                       View History

@@ -75,7 +75,7 @@ create table if not exists public.messages (
   created_at timestamptz not null default now()
 );
 
--- Reviews (optional, for future use)
+-- Reviews (client rates mechanic after completed service)
 create table if not exists public.reviews (
   id uuid primary key default gen_random_uuid(),
   mechanic_id uuid not null references public.mechanic_profiles (id) on delete cascade,
@@ -84,8 +84,44 @@ create table if not exists public.reviews (
   rating integer not null check (rating >= 1 and rating <= 5),
   comment text,
   created_at timestamptz not null default now(),
-  unique (request_id)
+  unique (request_id) -- one review per completed service request, not per client
 );
+
+-- Recalculate mechanic average rating when a review is submitted
+create or replace function public.update_mechanic_rating_on_review()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.mechanic_profiles mp
+  set
+    rating = coalesce(
+      (
+        select round(avg(r.rating)::numeric, 2)
+        from public.reviews r
+        where r.mechanic_id = new.mechanic_id
+      ),
+      0
+    ),
+    total_reviews = (
+      select count(*)::integer
+      from public.reviews r
+      where r.mechanic_id = new.mechanic_id
+    ),
+    updated_at = now()
+  where mp.id = new.mechanic_id;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists reviews_update_mechanic_rating on public.reviews;
+create trigger reviews_update_mechanic_rating
+  after insert on public.reviews
+  for each row
+  execute function public.update_mechanic_rating_on_review();
 
 -- updated_at helper
 create or replace function public.set_updated_at()
@@ -273,14 +309,86 @@ create policy "service_requests_insert_client"
   with check (client_id = auth.uid());
 
 drop policy if exists "service_requests_update_participants" on public.service_requests;
-create policy "service_requests_update_participants"
+
+drop policy if exists "service_requests_mechanic_accept" on public.service_requests;
+create policy "service_requests_mechanic_accept"
+  on public.service_requests for update
+  to authenticated
+  using (
+    status = 'pending'
+    and mechanic_id in (
+      select mp.id from public.mechanic_profiles mp where mp.user_id = auth.uid()
+    )
+  )
+  with check (
+    status = 'accepted'
+    and mechanic_id in (
+      select mp.id from public.mechanic_profiles mp where mp.user_id = auth.uid()
+    )
+  );
+
+drop policy if exists "service_requests_mechanic_decline" on public.service_requests;
+create policy "service_requests_mechanic_decline"
+  on public.service_requests for update
+  to authenticated
+  using (
+    status = 'pending'
+    and mechanic_id in (
+      select mp.id from public.mechanic_profiles mp where mp.user_id = auth.uid()
+    )
+  )
+  with check (
+    status = 'cancelled'
+    and mechanic_id in (
+      select mp.id from public.mechanic_profiles mp where mp.user_id = auth.uid()
+    )
+  );
+
+drop policy if exists "service_requests_mechanic_start" on public.service_requests;
+create policy "service_requests_mechanic_start"
+  on public.service_requests for update
+  to authenticated
+  using (
+    status = 'accepted'
+    and mechanic_id in (
+      select mp.id from public.mechanic_profiles mp where mp.user_id = auth.uid()
+    )
+  )
+  with check (
+    status = 'in_progress'
+    and mechanic_id in (
+      select mp.id from public.mechanic_profiles mp where mp.user_id = auth.uid()
+    )
+  );
+
+drop policy if exists "service_requests_mechanic_complete" on public.service_requests;
+create policy "service_requests_mechanic_complete"
+  on public.service_requests for update
+  to authenticated
+  using (
+    status = 'in_progress'
+    and mechanic_id in (
+      select mp.id from public.mechanic_profiles mp where mp.user_id = auth.uid()
+    )
+  )
+  with check (
+    status = 'completed'
+    and mechanic_id in (
+      select mp.id from public.mechanic_profiles mp where mp.user_id = auth.uid()
+    )
+  );
+
+drop policy if exists "service_requests_client_cancel" on public.service_requests;
+create policy "service_requests_client_cancel"
   on public.service_requests for update
   to authenticated
   using (
     client_id = auth.uid()
-    or mechanic_id in (
-      select mp.id from public.mechanic_profiles mp where mp.user_id = auth.uid()
-    )
+    and status in ('pending', 'accepted', 'in_progress')
+  )
+  with check (
+    client_id = auth.uid()
+    and status = 'cancelled'
   );
 
 -- Messages policies
@@ -324,7 +432,77 @@ drop policy if exists "reviews_insert_client" on public.reviews;
 create policy "reviews_insert_client"
   on public.reviews for insert
   to authenticated
-  with check (client_id = auth.uid());
+  with check (
+    client_id = auth.uid()
+    and exists (
+      select 1
+      from public.service_requests sr
+      where sr.id = reviews.request_id
+        and sr.client_id = auth.uid()
+        and sr.mechanic_id = reviews.mechanic_id
+        and sr.status = 'completed'
+    )
+  );
+
+create or replace function public.submit_service_review(
+  p_request_id uuid,
+  p_rating integer,
+  p_comment text default null
+)
+returns public.reviews
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_request public.service_requests;
+  v_review public.reviews;
+begin
+  if p_rating < 1 or p_rating > 5 then
+    raise exception 'Rating must be between 1 and 5';
+  end if;
+
+  select * into v_request
+  from public.service_requests
+  where id = p_request_id;
+
+  if not found then
+    raise exception 'Service request not found';
+  end if;
+
+  if v_request.client_id is distinct from auth.uid() then
+    raise exception 'Only the client can review this service';
+  end if;
+
+  if v_request.status is distinct from 'completed' then
+    raise exception 'You can review after the mechanic marks the job complete';
+  end if;
+
+  insert into public.reviews (
+    mechanic_id,
+    client_id,
+    request_id,
+    rating,
+    comment
+  )
+  values (
+    v_request.mechanic_id,
+    auth.uid(),
+    p_request_id,
+    p_rating,
+    nullif(trim(p_comment), '')
+  )
+  returning * into v_review;
+
+  return v_review;
+exception
+  when unique_violation then
+    raise exception 'You already reviewed this service';
+end;
+$$;
+
+revoke all on function public.submit_service_review(uuid, integer, text) from public;
+grant execute on function public.submit_service_review(uuid, integer, text) to authenticated;
 
 -- Chat media storage (voice notes + request photos — 50 MB per file)
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)

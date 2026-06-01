@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Save, Wrench } from "lucide-react";
+import { Loader2, MapPin, Save, Wrench } from "lucide-react";
+import { WorkshopLocationPicker } from "@/components/workshop-location-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -41,6 +42,8 @@ export function MechanicProfileForm({
     yearsExperience: existingProfile?.years_experience?.toString() || "",
     specialties: existingProfile?.specialties || [],
     isAvailable: existingProfile?.is_available ?? true,
+    latitude: existingProfile?.latitude ?? null,
+    longitude: existingProfile?.longitude ?? null,
   });
 
   const handleSpecialtyToggle = (specialty: string) => {
@@ -65,6 +68,11 @@ export function MechanicProfileForm({
       return;
     }
 
+    if (formData.latitude == null || formData.longitude == null) {
+      toast.error("Pin your workshop on the map so clients can find you");
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -82,6 +90,8 @@ export function MechanicProfileForm({
           : 0,
         specialties: formData.specialties,
         is_available: formData.isAvailable,
+        latitude: formData.latitude,
+        longitude: formData.longitude,
       };
 
       let error;
@@ -234,6 +244,30 @@ export function MechanicProfileForm({
             </div>
           </div>
 
+        </CardContent>
+      </Card>
+
+      {/* Workshop map pin — saves latitude/longitude shown on Find a Mechanic */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MapPin className="h-5 w-5 text-primary" />
+            Workshop on the map *
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <WorkshopLocationPicker
+            latitude={formData.latitude}
+            longitude={formData.longitude}
+            onChange={({ latitude, longitude }) =>
+              setFormData((prev) => ({ ...prev, latitude, longitude }))
+            }
+            geocodeQuery={
+              [formData.address, formData.location, "Ghana"]
+                .filter(Boolean)
+                .join(", ") || undefined
+            }
+          />
         </CardContent>
       </Card>
 

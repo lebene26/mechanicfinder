@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import {
   Search,
@@ -17,6 +17,7 @@ import {
   ImagePlus,
   LocateFixed,
   Trash2,
+  Navigation,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,6 +49,8 @@ import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import type { MechanicProfile } from "@/lib/types";
 import { LOCATIONS, SPECIALTIES } from "@/lib/types";
+import { distanceInKm, hasCoordinates } from "@/lib/geo";
+import { MechanicsMap } from "@/components/mechanics-map";
 
 interface MechanicSearchProps {
   mechanics: MechanicProfile[];
@@ -60,6 +63,13 @@ export function MechanicSearch({ mechanics, userId }: MechanicSearchProps) {
   const [selectedLocation, setSelectedLocation] = useState<string>("all");
   const [selectedSpecialty, setSelectedSpecialty] = useState<string>("all");
   const [showFilters, setShowFilters] = useState(false);
+  const [selectedMapMechanic, setSelectedMapMechanic] =
+    useState<MechanicProfile | null>(null);
+  const [userMapLocation, setUserMapLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const [isLocatingMap, setIsLocatingMap] = useState(false);
 
   const [selectedMechanic, setSelectedMechanic] =
     useState<MechanicProfile | null>(null);
@@ -170,25 +180,91 @@ export function MechanicSearch({ mechanics, userId }: MechanicSearchProps) {
     );
   };
 
+  const handleLocateOnMap = () => {
+    if (typeof window === "undefined" || !("geolocation" in navigator)) {
+      toast.error("Geolocation isn't supported on this device.");
+      return;
+    }
+    setIsLocatingMap(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserMapLocation({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+        });
+        toast.success("Showing mechanics near you");
+        setIsLocatingMap(false);
+      },
+      () => {
+        setIsLocatingMap(false);
+        toast.error("Unable to get your location for map search.");
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
+    );
+  };
+
   // Filter mechanics
-  const filteredMechanics = mechanics.filter((mechanic) => {
-    const matchesSearch =
-      searchQuery === "" ||
-      mechanic.workshop_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      mechanic.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      mechanic.specialties.some((s) =>
-        s.toLowerCase().includes(searchQuery.toLowerCase())
-      );
+  const filteredMechanics = useMemo(() => {
+    const filtered = mechanics.filter((mechanic) => {
+      const matchesSearch =
+        searchQuery === "" ||
+        mechanic.workshop_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        mechanic.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        mechanic.specialties.some((s) =>
+          s.toLowerCase().includes(searchQuery.toLowerCase())
+        );
 
-    const matchesLocation =
-      selectedLocation === "all" || mechanic.location === selectedLocation;
+      const matchesLocation =
+        selectedLocation === "all" || mechanic.location === selectedLocation;
 
-    const matchesSpecialty =
-      selectedSpecialty === "all" ||
-      mechanic.specialties.includes(selectedSpecialty);
+      const matchesSpecialty =
+        selectedSpecialty === "all" ||
+        mechanic.specialties.includes(selectedSpecialty);
 
-    return matchesSearch && matchesLocation && matchesSpecialty;
-  });
+      return matchesSearch && matchesLocation && matchesSpecialty;
+    });
+
+    if (!userMapLocation) return filtered;
+
+    return [...filtered].sort((a, b) => {
+      const aDistance = hasCoordinates(a)
+        ? distanceInKm(
+            userMapLocation.latitude,
+            userMapLocation.longitude,
+            a.latitude,
+            a.longitude
+          )
+        : Number.POSITIVE_INFINITY;
+      const bDistance = hasCoordinates(b)
+        ? distanceInKm(
+            userMapLocation.latitude,
+            userMapLocation.longitude,
+            b.latitude,
+            b.longitude
+          )
+        : Number.POSITIVE_INFINITY;
+      return aDistance - bDistance;
+    });
+  }, [
+    mechanics,
+    searchQuery,
+    selectedLocation,
+    selectedSpecialty,
+    userMapLocation,
+  ]);
+
+  const mapMechanics = filteredMechanics.filter(hasCoordinates).map((m) => ({
+    id: m.id,
+    workshop_name: m.workshop_name,
+    latitude: m.latitude,
+    longitude: m.longitude,
+  }));
+
+  const selectedMapId =
+    selectedMapMechanic &&
+    mapMechanics.some((m) => m.id === selectedMapMechanic.id)
+      ? selectedMapMechanic.id
+      : mapMechanics[0]?.id ?? null;
 
   const handleRequestService = (mechanic: MechanicProfile) => {
     setSelectedMechanic(mechanic);
@@ -239,6 +315,18 @@ export function MechanicSearch({ mechanics, userId }: MechanicSearchProps) {
         .single();
 
       if (error) throw error;
+
+      if (uploadedImageUrl) {
+        const { error: messageError } = await supabase.from("messages").insert({
+          request_id: data.id,
+          sender_id: userId,
+          content: "Photo attached to service request",
+          message_type: "image",
+          image_url: uploadedImageUrl,
+        });
+
+        if (messageError) throw messageError;
+      }
 
       toast.success("Request sent successfully!");
       setIsRequestModalOpen(false);
@@ -344,6 +432,59 @@ export function MechanicSearch({ mechanics, userId }: MechanicSearchProps) {
           {filteredMechanics.length} mechanic
           {filteredMechanics.length !== 1 ? "s" : ""} found
         </p>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={handleLocateOnMap}
+          disabled={isLocatingMap}
+        >
+          {isLocatingMap ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Navigation className="mr-2 h-4 w-4" />
+          )}
+          Near me
+        </Button>
+      </div>
+
+      {/* Google Map */}
+      <div className="overflow-hidden rounded-xl border border-border bg-card">
+        <MechanicsMap
+          mechanics={mapMechanics}
+          userLocation={
+            userMapLocation
+              ? {
+                  lat: userMapLocation.latitude,
+                  lng: userMapLocation.longitude,
+                }
+              : null
+          }
+          selectedId={selectedMapId}
+          onSelectMechanic={(id) => {
+            const mechanic = filteredMechanics.find((m) => m.id === id);
+            if (mechanic) setSelectedMapMechanic(mechanic);
+          }}
+          className="h-72"
+        />
+        {mapMechanics.length > 0 && (
+          <div className="flex flex-wrap gap-2 border-t border-border p-3">
+            {mapMechanics.slice(0, 8).map((mechanic) => (
+              <Button
+                key={mechanic.id}
+                variant={mechanic.id === selectedMapId ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  const full = filteredMechanics.find((m) => m.id === mechanic.id);
+                  if (full) setSelectedMapMechanic(full);
+                }}
+              >
+                <MapPin className="mr-1 h-3.5 w-3.5" />
+                {mechanic.workshop_name}
+              </Button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Mechanics Grid */}
@@ -390,6 +531,19 @@ export function MechanicSearch({ mechanics, userId }: MechanicSearchProps) {
                       {mechanic.address || mechanic.location}
                     </span>
                   </div>
+                  {userMapLocation &&
+                    mechanic.latitude != null &&
+                    mechanic.longitude != null && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {distanceInKm(
+                          userMapLocation.latitude,
+                          userMapLocation.longitude,
+                          mechanic.latitude,
+                          mechanic.longitude
+                        ).toFixed(1)}{" "}
+                        km away
+                      </p>
+                    )}
                   <div className="mt-2 flex items-center gap-3">
                     <span className="flex items-center gap-1 text-sm font-medium">
                       <Star className="h-4 w-4 fill-warning text-warning" />
@@ -445,6 +599,22 @@ export function MechanicSearch({ mechanics, userId }: MechanicSearchProps) {
                   <Button variant="outline" size="icon" asChild>
                     <a href={`tel:${mechanic.phone}`}>
                       <Phone className="h-4 w-4" />
+                    </a>
+                  </Button>
+                )}
+                {mechanic.latitude != null && mechanic.longitude != null && (
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    asChild
+                    title="Open in Google Maps"
+                  >
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${mechanic.latitude},${mechanic.longitude}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <MapPin className="h-4 w-4" />
                     </a>
                   </Button>
                 )}

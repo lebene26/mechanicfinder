@@ -49,6 +49,12 @@ export default async function ChatPage({ params }: ChatPageProps) {
     .eq("request_id", requestId)
     .order("created_at", { ascending: true });
 
+  const { data: existingReview } = await supabase
+    .from("reviews")
+    .select("*")
+    .eq("request_id", requestId)
+    .maybeSingle();
+
   // Determine if user is client or mechanic in this chat
   const isClient = request.client_id === user.id;
   const otherParty = isClient
@@ -67,6 +73,7 @@ export default async function ChatPage({ params }: ChatPageProps) {
       otherPartyName={otherPartyName || "User"}
       initialMessages={messages || []}
       isClient={isClient}
+      existingReview={existingReview}
     />
   );
 }

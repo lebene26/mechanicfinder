@@ -62,7 +62,11 @@ export default async function MessagesPage() {
       <div className="px-4 py-6 md:px-6 lg:px-8 pb-20 md:pb-6">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-foreground">Messages</h1>
-          <p className="text-muted-foreground">Your active conversations</p>
+          <p className="text-muted-foreground">
+            {isClient
+              ? "Chat with your mechanic while your request is in progress"
+              : "Your active conversations"}
+          </p>
         </div>
         <MessagesList conversations={conversations as never} isClient={isClient} />
       </div>

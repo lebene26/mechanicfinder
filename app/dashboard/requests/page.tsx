@@ -14,13 +14,19 @@ export default async function RequestsPage() {
     profiles?: Profile;
   })[] = [];
 
+  let reviewedRequestIds: string[] = [];
+
   if (isClient) {
-    const { data } = await supabase
-      .from("service_requests")
-      .select("*, mechanic_profiles(*, profiles:user_id(*))")
-      .eq("client_id", user.id)
-      .order("created_at", { ascending: false });
+    const [{ data }, { data: reviews }] = await Promise.all([
+      supabase
+        .from("service_requests")
+        .select("*, mechanic_profiles(*, profiles:user_id(*))")
+        .eq("client_id", user.id)
+        .order("created_at", { ascending: false }),
+      supabase.from("reviews").select("request_id").eq("client_id", user.id),
+    ]);
     requests = data || [];
+    reviewedRequestIds = reviews?.map((r) => r.request_id) ?? [];
   } else if (role === "mechanic") {
     const { data: mechanicProfile } = await supabase
       .from("mechanic_profiles")
@@ -54,7 +60,11 @@ export default async function RequestsPage() {
               : "View and manage incoming service requests"}
           </p>
         </div>
-        <RequestsList requests={requests} isClient={isClient} />
+        <RequestsList
+          requests={requests}
+          isClient={isClient}
+          reviewedRequestIds={reviewedRequestIds}
+        />
       </div>
     </DashboardLayout>
   );

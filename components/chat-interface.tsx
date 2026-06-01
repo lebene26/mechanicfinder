@@ -36,7 +36,13 @@ import {
 import { toast } from "sonner";
 import { formatDistanceToNow, format } from "date-fns";
 import { cn } from "@/lib/utils";
-import type { Message, ServiceRequest, Profile } from "@/lib/types";
+import { MechanicReviewForm } from "@/components/mechanic-review-form";
+import {
+  getStatusLabel,
+  getStatusBadgeClass,
+  isClientAwaitingCompletion,
+} from "@/lib/request-status";
+import type { Message, Review, ServiceRequest, Profile } from "@/lib/types";
 
 interface ChatInterfaceProps {
   requestId: string;
@@ -49,6 +55,7 @@ interface ChatInterfaceProps {
   otherPartyName: string;
   initialMessages: (Message & { profiles: Profile })[];
   isClient: boolean;
+  existingReview?: Review | null;
 }
 
 export function ChatInterface({
@@ -59,9 +66,11 @@ export function ChatInterface({
   otherPartyName,
   initialMessages,
   isClient,
+  existingReview = null,
 }: ChatInterfaceProps) {
   const router = useRouter();
   const [messages, setMessages] = useState(initialMessages);
+  const [review, setReview] = useState<Review | null>(existingReview);
   const [newMessage, setNewMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
@@ -404,6 +413,29 @@ export function ChatInterface({
   const handleStatusChange = async (
     newStatus: "in_progress" | "completed" | "cancelled"
   ) => {
+    if (isClient && newStatus !== "cancelled") {
+      toast.error("Only your mechanic can start or complete this service");
+      return;
+    }
+    if (!isClient && newStatus === "cancelled") {
+      toast.error("Only the client can cancel this service");
+      return;
+    }
+
+    const canTransition =
+      (status === "pending" && newStatus === "cancelled" && isClient) ||
+      (status === "accepted" &&
+        ((newStatus === "in_progress" && !isClient) ||
+          (newStatus === "cancelled" && isClient))) ||
+      (status === "in_progress" &&
+        ((newStatus === "completed" && !isClient) ||
+          (newStatus === "cancelled" && isClient)));
+
+    if (!canTransition) {
+      toast.error("This status change is not allowed");
+      return;
+    }
+
     try {
       const supabase = createClient();
       const { error } = await supabase
@@ -419,12 +451,20 @@ export function ChatInterface({
           ? "Job marked as completed!"
           : newStatus === "in_progress"
           ? "Job started"
-          : "Job cancelled"
+          : "Service cancelled"
       );
     } catch {
       toast.error("Failed to update status");
     }
   };
+
+  const canClientCancel =
+    isClient &&
+    (status === "pending" || status === "accepted" || status === "in_progress");
+  const canMechanicStart = !isClient && status === "accepted";
+  const canMechanicComplete = !isClient && status === "in_progress";
+  const hasStatusMenuActions =
+    canClientCancel || canMechanicStart || canMechanicComplete;
 
   // Simulate typing indicator
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -442,38 +482,14 @@ export function ChatInterface({
     }, 2000);
   };
 
-  const getStatusBadge = () => {
-    switch (status) {
-      case "pending":
-        return <Badge variant="secondary">Pending</Badge>;
-      case "accepted":
-        return (
-          <Badge variant="secondary" className="bg-primary/10 text-primary">
-            Accepted
-          </Badge>
-        );
-      case "in_progress":
-        return (
-          <Badge variant="secondary" className="bg-warning/10 text-warning">
-            In Progress
-          </Badge>
-        );
-      case "completed":
-        return (
-          <Badge variant="secondary" className="bg-success/10 text-success">
-            Completed
-          </Badge>
-        );
-      case "cancelled":
-        return (
-          <Badge variant="secondary" className="bg-destructive/10 text-destructive">
-            Cancelled
-          </Badge>
-        );
-      default:
-        return null;
-    }
-  };
+  const getStatusBadge = () => (
+    <Badge
+      variant="secondary"
+      className={getStatusBadgeClass(status, isClient)}
+    >
+      {getStatusLabel(status, isClient)}
+    </Badge>
+  );
 
   return (
     <div className="flex h-screen flex-col bg-background">
@@ -494,9 +510,12 @@ export function ChatInterface({
                 <h1 className="font-semibold text-foreground">
                   {otherPartyName}
                 </h1>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   {request.service_type}
                   {getStatusBadge()}
+                  {isClient && isClientAwaitingCompletion(status) && (
+                    <span>· Awaiting mechanic confirmation</span>
+                  )}
                 </div>
               </div>
             </div>
@@ -509,40 +528,42 @@ export function ChatInterface({
                 </a>
               </Button>
             )}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon">
-                  <MoreVertical className="h-5 w-5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {status === "accepted" && (
-                  <DropdownMenuItem
-                    onClick={() => handleStatusChange("in_progress")}
-                  >
-                    <CheckCircle className="mr-2 h-4 w-4" />
-                    Start Job
-                  </DropdownMenuItem>
-                )}
-                {(status === "accepted" || status === "in_progress") && (
-                  <>
+            {hasStatusMenuActions && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon">
+                    <MoreVertical className="h-5 w-5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {canMechanicStart && (
+                    <DropdownMenuItem
+                      onClick={() => handleStatusChange("in_progress")}
+                    >
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                      Start Job
+                    </DropdownMenuItem>
+                  )}
+                  {canMechanicComplete && (
                     <DropdownMenuItem
                       onClick={() => handleStatusChange("completed")}
                     >
                       <CheckCircle className="mr-2 h-4 w-4 text-success" />
                       Mark Complete
                     </DropdownMenuItem>
+                  )}
+                  {canClientCancel && (
                     <DropdownMenuItem
                       onClick={() => handleStatusChange("cancelled")}
                       className="text-destructive"
                     >
                       <XCircle className="mr-2 h-4 w-4" />
-                      Cancel Job
+                      Cancel Service
                     </DropdownMenuItem>
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
         </div>
       </header>
@@ -748,10 +769,20 @@ export function ChatInterface({
         </div>
       )}
 
-      {/* Closed Chat Notice */}
+      {/* Review + closed chat notice */}
       {(status === "completed" || status === "cancelled") && (
-        <div className="border-t border-border bg-muted p-4 text-center">
-          <p className="text-sm text-muted-foreground">
+        <div className="border-t border-border bg-muted p-4 space-y-4">
+          {isClient && status === "completed" && (
+            <MechanicReviewForm
+              mechanicId={request.mechanic_id}
+              requestId={requestId}
+              clientId={currentUserId}
+              mechanicName={otherPartyName}
+              existingReview={review}
+              onSubmitted={setReview}
+            />
+          )}
+          <p className="text-center text-sm text-muted-foreground">
             This conversation has been{" "}
             {status === "completed" ? "completed" : "cancelled"}
           </p>
