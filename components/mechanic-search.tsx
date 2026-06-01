@@ -258,6 +258,7 @@ export function MechanicSearch({ mechanics, userId }: MechanicSearchProps) {
     workshop_name: m.workshop_name,
     latitude: m.latitude,
     longitude: m.longitude,
+    is_available: m.is_available,
   }));
 
   const selectedMapId =
@@ -270,6 +271,14 @@ export function MechanicSearch({ mechanics, userId }: MechanicSearchProps) {
     setSelectedMechanic(mechanic);
     resetRequestForm();
     setIsRequestModalOpen(true);
+  };
+
+  const openRequestForMechanic = (mechanic: MechanicProfile) => {
+    if (!mechanic.is_available) {
+      toast.error(`${mechanic.workshop_name} is currently unavailable.`);
+      return;
+    }
+    handleRequestService(mechanic);
   };
 
   const handleSubmitRequest = async () => {
@@ -464,6 +473,10 @@ export function MechanicSearch({ mechanics, userId }: MechanicSearchProps) {
           onSelectMechanic={(id) => {
             const mechanic = filteredMechanics.find((m) => m.id === id);
             if (mechanic) setSelectedMapMechanic(mechanic);
+          }}
+          onRequestService={(id) => {
+            const mechanic = filteredMechanics.find((m) => m.id === id);
+            if (mechanic) openRequestForMechanic(mechanic);
           }}
           className="h-72"
         />
