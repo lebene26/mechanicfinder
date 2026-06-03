@@ -268,10 +268,15 @@ export function MechanicSearch({ mechanics, userId }: MechanicSearchProps) {
       : mapMechanics[0]?.id ?? null;
 
   const handleRequestService = (mechanic: MechanicProfile) => {
-    setSelectedMechanic(mechanic);
     resetRequestForm();
+    setSelectedMechanic(mechanic);
     setIsRequestModalOpen(true);
   };
+
+  const requestServiceTypes =
+    selectedMechanic?.specialties?.length
+      ? selectedMechanic.specialties
+      : [...SPECIALTIES];
 
   const openRequestForMechanic = (mechanic: MechanicProfile) => {
     if (!mechanic.is_available) {
@@ -638,7 +643,13 @@ export function MechanicSearch({ mechanics, userId }: MechanicSearchProps) {
       )}
 
       {/* Request Service Modal */}
-      <Dialog open={isRequestModalOpen} onOpenChange={setIsRequestModalOpen}>
+      <Dialog
+        open={isRequestModalOpen}
+        onOpenChange={(open) => {
+          setIsRequestModalOpen(open);
+          if (!open) setSelectedMechanic(null);
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Request Service</DialogTitle>
@@ -651,16 +662,17 @@ export function MechanicSearch({ mechanics, userId }: MechanicSearchProps) {
             <div className="space-y-2">
               <Label>Service Type</Label>
               <Select
-                value={requestForm.serviceType}
+                modal={false}
+                value={requestForm.serviceType || undefined}
                 onValueChange={(value) =>
                   setRequestForm((prev) => ({ ...prev, serviceType: value }))
                 }
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select service type" />
                 </SelectTrigger>
-                <SelectContent>
-                  {selectedMechanic?.specialties.map((specialty) => (
+                <SelectContent position="popper" className="z-[250]">
+                  {requestServiceTypes.map((specialty) => (
                     <SelectItem key={specialty} value={specialty}>
                       {specialty}
                     </SelectItem>
