@@ -7,13 +7,11 @@ import {
   Clock,
   CheckCircle,
   XCircle,
-  MessageCircle,
   Star,
   AlertCircle,
   ChevronRight,
   ToggleLeft,
   ToggleRight,
-  TrendingUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -119,9 +117,6 @@ export function MechanicDashboardContent({
   }
 
   const pendingRequests = requests.filter((r) => r.status === "pending");
-  const activeRequests = requests.filter(
-    (r) => r.status === "accepted" || r.status === "in_progress"
-  );
   const completedRequests = requests.filter((r) => r.status === "completed");
 
   return (
@@ -155,7 +150,7 @@ export function MechanicDashboardContent({
       </div>
 
       {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-3">
         <Card>
           <CardContent className="flex items-center gap-4 p-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-warning/10">
@@ -165,19 +160,6 @@ export function MechanicDashboardContent({
               <p className="text-sm text-muted-foreground">Pending</p>
               <p className="text-2xl font-bold text-foreground">
                 {pendingRequests.length}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center gap-4 p-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-              <Wrench className="h-6 w-6 text-primary" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Active</p>
-              <p className="text-2xl font-bold text-foreground">
-                {activeRequests.length}
               </p>
             </div>
           </CardContent>
@@ -277,60 +259,6 @@ export function MechanicDashboardContent({
                       Accept
                     </Button>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Active Jobs */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <TrendingUp className="h-5 w-5 text-primary" />
-            Active Jobs
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {activeRequests.length === 0 ? (
-            <div className="py-8 text-center text-muted-foreground">
-              No active jobs
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {activeRequests.map((request) => (
-                <div
-                  key={request.id}
-                  className="flex flex-col gap-4 rounded-lg border border-border p-4 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="flex items-start gap-4">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 font-semibold text-primary">
-                      {request.profiles?.full_name?.[0] || "C"}
-                    </div>
-                    <div>
-                      <p className="font-medium text-foreground">
-                        {request.profiles?.full_name || "Client"}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {request.service_type} - {request.location}
-                      </p>
-                      <Badge
-                        variant="secondary"
-                        className="mt-1 bg-primary/10 text-primary"
-                      >
-                        {request.status === "accepted"
-                          ? "Accepted"
-                          : "In Progress"}
-                      </Badge>
-                    </div>
-                  </div>
-                  <Link href={`/chat/${request.id}`}>
-                    <Button size="sm">
-                      <MessageCircle className="mr-2 h-4 w-4" />
-                      Open Chat
-                    </Button>
-                  </Link>
                 </div>
               ))}
             </div>
