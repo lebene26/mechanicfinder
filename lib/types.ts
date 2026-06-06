@@ -77,6 +77,15 @@ export interface Review {
   profiles?: Profile;
 }
 
+export interface MechanicLiveLocation {
+  request_id: string;
+  latitude: number;
+  longitude: number;
+  accuracy: number | null;
+  heading: number | null;
+  updated_at: string;
+}
+
 export const LOCATIONS = [
   "Accra",
   "Kumasi",

@@ -57,6 +57,20 @@ export async function deleteUser(userId: string): Promise<AdminActionResult> {
 
   const admin = createAdminClient();
 
+  const { data: profile, error: profileError } = await admin
+    .from("profiles")
+    .select("status")
+    .eq("id", userId)
+    .single();
+
+  if (profileError) {
+    return { error: profileError.message };
+  }
+
+  if (profile.status !== "suspended") {
+    return { error: "Only suspended users can be deleted." };
+  }
+
   // Deleting the auth user cascades to public.profiles (FK on delete cascade).
   const { error } = await admin.auth.admin.deleteUser(userId);
 

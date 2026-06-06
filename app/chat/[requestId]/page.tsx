@@ -4,10 +4,12 @@ import { ChatInterface } from "@/components/chat-interface";
 
 interface ChatPageProps {
   params: Promise<{ requestId: string }>;
+  searchParams: Promise<{ track?: string }>;
 }
 
-export default async function ChatPage({ params }: ChatPageProps) {
+export default async function ChatPage({ params, searchParams }: ChatPageProps) {
   const { requestId } = await params;
+  const { track } = await searchParams;
   const supabase = await createClient();
 
   const {
@@ -74,6 +76,7 @@ export default async function ChatPage({ params }: ChatPageProps) {
       initialMessages={messages || []}
       isClient={isClient}
       existingReview={existingReview}
+      showTracking={track === "1"}
     />
   );
 }

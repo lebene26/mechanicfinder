@@ -6,6 +6,7 @@ import {
   CheckCircle,
   XCircle,
   MessageCircle,
+  Navigation,
   Wrench,
   Star,
 } from "lucide-react";
@@ -124,10 +125,33 @@ export function RequestsList({
                 </div>
               </div>
               <div className="flex gap-2 sm:flex-col">
+                {isClient &&
+                  (request.status === "accepted" ||
+                    request.status === "in_progress") && (
+                    <Link
+                      href={`/chat/${request.id}?track=1`}
+                      className="flex-1 sm:flex-none"
+                    >
+                      <Button className="w-full" size="sm" variant="default">
+                        <Navigation className="mr-2 h-4 w-4" />
+                        Track Mechanic
+                      </Button>
+                    </Link>
+                  )}
                 {request.status !== "cancelled" &&
                   request.status !== "completed" && (
                     <Link href={`/chat/${request.id}`} className="flex-1 sm:flex-none">
-                      <Button className="w-full" size="sm">
+                      <Button
+                        className="w-full"
+                        size="sm"
+                        variant={
+                          isClient &&
+                          (request.status === "accepted" ||
+                            request.status === "in_progress")
+                            ? "outline"
+                            : "default"
+                        }
+                      >
                         <MessageCircle className="mr-2 h-4 w-4" />
                         Open Chat
                       </Button>

@@ -52,11 +52,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import type { Profile } from "@/lib/types";
-import {
-  deleteUser,
-  suspendUser,
-  unsuspendUser,
-} from "@/app/admin/actions";
+import { deleteUser, suspendUser, unsuspendUser } from "@/app/admin/actions";
 
 interface AdminDashboardProps {
   currentUserId: string;
@@ -371,31 +367,33 @@ export function AdminDashboardContent({
                                   Suspend user
                                 </DropdownMenuItem>
                               ) : (
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    setPendingAction({
-                                      type: "unsuspend",
-                                      user,
-                                    })
-                                  }
-                                >
-                                  <CheckCircle2 className="mr-2 h-4 w-4" />
-                                  Reactivate user
-                                </DropdownMenuItem>
+                                <>
+                                  <DropdownMenuItem
+                                    onClick={() =>
+                                      setPendingAction({
+                                        type: "unsuspend",
+                                        user,
+                                      })
+                                    }
+                                  >
+                                    <CheckCircle2 className="mr-2 h-4 w-4" />
+                                    Reactivate user
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    variant="destructive"
+                                    onClick={() =>
+                                      setPendingAction({
+                                        type: "delete",
+                                        user,
+                                      })
+                                    }
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Delete user
+                                  </DropdownMenuItem>
+                                </>
                               )}
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                variant="destructive"
-                                onClick={() =>
-                                  setPendingAction({
-                                    type: "delete",
-                                    user,
-                                  })
-                                }
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Delete user
-                              </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>

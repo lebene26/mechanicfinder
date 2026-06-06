@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
+  Navigation,
   Send,
   Image,
   MapPin,
@@ -37,6 +38,8 @@ import { toast } from "sonner";
 import { formatDistanceToNow, format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { MechanicReviewForm } from "@/components/mechanic-review-form";
+import { LiveTrackingMap } from "@/components/live-tracking-map";
+import { useMechanicLocationTracking } from "@/hooks/use-mechanic-location-tracking";
 import {
   getStatusLabel,
   getStatusBadgeClass,
@@ -56,6 +59,7 @@ interface ChatInterfaceProps {
   initialMessages: (Message & { profiles: Profile })[];
   isClient: boolean;
   existingReview?: Review | null;
+  showTracking?: boolean;
 }
 
 export function ChatInterface({
@@ -67,6 +71,7 @@ export function ChatInterface({
   initialMessages,
   isClient,
   existingReview = null,
+  showTracking = false,
 }: ChatInterfaceProps) {
   const router = useRouter();
   const [messages, setMessages] = useState(initialMessages);
@@ -466,6 +471,19 @@ export function ChatInterface({
   const hasStatusMenuActions =
     canClientCancel || canMechanicStart || canMechanicComplete;
 
+  const isLiveTrackingActive =
+    status === "accepted" || status === "in_progress";
+
+  const clientLocation =
+    request.latitude != null && request.longitude != null
+      ? { lat: request.latitude, lng: request.longitude }
+      : null;
+
+  const { isSharing, error: trackingError } = useMechanicLocationTracking({
+    requestId,
+    enabled: !isClient && isLiveTrackingActive,
+  });
+
   // Simulate typing indicator
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setNewMessage(e.target.value);
@@ -584,6 +602,43 @@ export function ChatInterface({
             </p>
           )}
         </div>
+
+        {showTracking && isLiveTrackingActive && isClient && (
+          <div className="mb-6">
+            <LiveTrackingMap
+              requestId={requestId}
+              clientLocation={clientLocation}
+              mechanicName={otherPartyName}
+              isTrackingActive={isLiveTrackingActive}
+              className="h-56"
+            />
+          </div>
+        )}
+
+        {isLiveTrackingActive && !isClient && (
+          <div
+            className={cn(
+              "mb-6 rounded-xl border px-4 py-3 text-sm",
+              trackingError
+                ? "border-destructive/40 bg-destructive/5 text-destructive"
+                : "border-primary/30 bg-primary/5 text-foreground"
+            )}
+          >
+            <div className="flex items-center gap-2 font-medium">
+              <Navigation className="h-4 w-4 shrink-0" />
+              {trackingError
+                ? trackingError
+                : isSharing
+                  ? "Sharing your live location with the driver"
+                  : "Getting your location…"}
+            </div>
+            {!trackingError && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Keep this page open while you travel to the breakdown site.
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Message List */}
         <div className="space-y-4">
